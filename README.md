@@ -18,28 +18,38 @@ npm install gas-sheet-driver
 
 ## 基本的な使い方
 
-### ローカル環境でのテスト (SQLite)
+### 環境に応じたドライバーの切り替え
+
+`gas-sheet-driver` の真価は、本番（GAS）とローカル（Node.js/SQLite）でコードを共通化できる点にあります。
 
 ```typescript
-import { GasSheetClient, SqliteDriver } from 'gas-sheet-driver';
+import { GasSheetClient, SqliteDriver, GasDriver } from 'gas-sheet-driver';
 
-// SQLite ドライバーの初期化
-const driver = new SqliteDriver('test-data.db');
+let driver;
+
+// 環境判定（GAS環境かどうかのチェック）
+if (typeof SpreadsheetApp !== 'undefined') {
+  // 本番環境 (Google Apps Script)
+  driver = new GasDriver(SpreadsheetApp.getActiveSpreadsheet());
+} else {
+  // ローカル環境 (Node.js / Unit Test)
+  driver = new SqliteDriver('local-debug.db');
+}
+
 const client = new GasSheetClient(driver);
 
-// シートの取得・作成
-const sheet = client.insertSheet('Users');
+// 以降のコードは、どちらの環境でも全く同じように動作します
+const sheet = client.getSheetByName('Data') || client.insertSheet('Data');
+sheet.appendRow([new Date().toISOString(), 'Log Entry']);
+```
 
-// データの書き込み
-sheet.getRange('A1:B1').setValues([['ID', 'Name']]);
-sheet.appendRow([1, 'Alice']);
+### クライアントサイドからの利用が想定される場合
 
-// データの読み込み
-const values = sheet.getRange('A1:B2').getValues();
-console.log(values); // [['ID', 'Name'], [1, 'Alice']]
+もし Web アプリケーションなどで `google.script.run` を介した判定が必要な場合は、以下のようなパターンも有効です。
 
-// リソースの解放
-driver.close();
+```typescript
+const isGas = typeof google !== 'undefined' && google.script;
+// ... 各環境に応じた初期化
 ```
 
 ## アーキテクチャ
