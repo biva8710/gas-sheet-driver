@@ -39,10 +39,12 @@ if (typeof SpreadsheetApp === 'undefined') {
     WrapStrategy: GasSheetClient.WrapStrategy
   };
   
-  // 必要に応じて他のサービスもモック
-  (global as any).PropertiesService = {
-    getScriptProperties: () => ({ getProperty: (key: string) => 'DUMMY_ID' })
-  };
+  // その他のサービスのモックも利用可能
+  const { MockPropertiesService, MockUtilities, MockSession } = require('gas-sheet-driver');
+
+  (global as any).PropertiesService = new MockPropertiesService({ SSID: 'DUMMY_ID' });
+  (global as any).Utilities = new MockUtilities();
+  (global as any).Session = new MockSession('dev-user@example.com');
 }
 
 /**
