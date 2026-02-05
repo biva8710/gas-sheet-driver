@@ -47,7 +47,16 @@ const GasBridge = {
                     .catch(reject);
             }
         });
-    }
+    },
+
+    /**
+     * Proxied access to server functions, matching google.script.run behavior.
+     */
+    run: new Proxy({} as any, {
+        get(_, prop: string) {
+            return (...args: any[]) => GasBridge.call(prop, ...args);
+        }
+    })
 };
 
 // Expose to global
