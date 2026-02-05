@@ -7,6 +7,7 @@ import { GasSheetClient } from './GasSheetClient';
 import { MockPropertiesService } from './mocks/MockPropertiesService';
 import { MockSession } from './mocks/MockSession';
 import { MockUtilities } from './mocks/MockUtilities';
+import * as esbuild from 'esbuild';
 
 interface GasPluginOptions {
     /** Path to the GAS script files/directories. */
@@ -104,7 +105,7 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
             const stat = fs.statSync(filePath);
             if (stat && stat.isDirectory()) {
                 results = results.concat(findJsFiles(filePath));
-            } else if (file.endsWith('.js') && !file.endsWith('.test.js') && file !== 'gas-polyfill.js' && file !== 'gas-bridge.js') {
+            } else if ((file.endsWith('.js') || file.endsWith('.ts')) && !file.endsWith('.test.js') && !file.endsWith('.test.ts') && file !== 'gas-polyfill.js' && file !== 'gas-bridge.js') {
                 results.push(filePath);
             }
         });
@@ -154,12 +155,50 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
 
                 gasContext = vm.createContext(sandbox);
 
-                // Load all scripts into the same context
-                scriptFiles.forEach(file => {
-                    const code = fs.readFileSync(file, 'utf8');
-                    vm.runInContext(code, gasContext);
-                });
-                console.log('[GasPlugin] GAS Context initialized.');
+                // --- 2. Bundle and Load Scripts ---
+                // We bundle the scripts to handle imports/exports and TypeScript
+                // If there's an index.ts or index.js, we treat it as the entry.
+                const entryFile = scriptFiles.find(f => f.endsWith('index.ts') || f.endsWith('index.js')) || scriptFiles[0];
+
+                if (entryFile) {
+                    try {
+                        const result = esbuild.buildSync({
+                            entryPoints: [entryFile],
+                            bundle: true,
+                            write: false,
+                            format: 'cjs',
+                            platform: 'neutral',
+                            target: 'esnext',
+                            // Allow common GAS globals to be external if they were somehow imported,
+                            // but usually they just exist in the sandbox.
+                        });
+
+                        const bundledCode = result.outputFiles[0].text;
+                        const exportsObj: any = {};
+                        const moduleObj = { exports: exportsObj };
+
+                        // In the sandbox, make exports and module available
+                        gasContext.exports = exportsObj;
+                        gasContext.module = moduleObj;
+
+                        vm.runInContext(bundledCode, gasContext);
+
+                        // Copy exported functions back to global context so they are callable as gasContext[functionName]
+                        const finalExports = gasContext.module.exports;
+                        Object.keys(finalExports).forEach(key => {
+                            gasContext[key] = finalExports[key];
+                        });
+
+                        console.log('[GasPlugin] GAS Context initialized with bundled code.');
+                    } catch (err) {
+                        console.error('[GasPlugin] Bundling failed:', err);
+                        // Fallback: Just load as is (might fail if it has imports)
+                        scriptFiles.forEach(file => {
+                            const code = fs.readFileSync(file, 'utf8');
+                            vm.runInContext(code, gasContext);
+                        });
+                    }
+                }
 
                 // User Custom Callback
                 if (onContextReady) {
