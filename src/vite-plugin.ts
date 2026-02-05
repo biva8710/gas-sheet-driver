@@ -9,20 +9,20 @@ import { MockSession } from './mocks/MockSession';
 import { MockUtilities } from './mocks/MockUtilities';
 
 interface GasPluginOptions {
-    /** Path to the GAS script file(s). If omitted, attempts to read .clasp.json */
-    scriptPath?: string | string[];
-    /** Path to the SQLite database file */
-    dbPath?: string;
-    /** Initial SSID for mock properties */
-    mockSsid?: string;
+    /** Path to the GAS script files/directories. */
+    include?: string | string[];
+    /** Path to the default spreadsheet file (SQLite db) */
+    defaultSpreadsheet?: string;
+    /** Initial properties for MockPropertiesService */
+    mockProperties?: Record<string, string>;
     /** Callback fired when GAS context is initialized */
     onContextReady?: (context: any) => void;
 }
 
 export function gasPlugin(options: GasPluginOptions = {}): Plugin {
     const {
-        dbPath = 'local-dev.db',
-        mockSsid = 'DEV_SHEET_ID',
+        defaultSpreadsheet = 'local-dev.db',
+        mockProperties = {},
         onContextReady
     } = options;
 
@@ -31,9 +31,22 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
 
     // Helper to find script files from .clasp.json
     function resolveScriptFiles(cwd: string): string[] {
-        if (options.scriptPath) {
-            const files = Array.isArray(options.scriptPath) ? options.scriptPath : [options.scriptPath];
-            return files.map(f => path.resolve(cwd, f));
+        if (options.include) {
+            const inputs = Array.isArray(options.include) ? options.include : [options.include];
+            // If input is directory, find js files inside. If file, use it.
+            let files: string[] = [];
+            inputs.forEach(input => {
+                const absPath = path.resolve(cwd, input);
+                if (fs.existsSync(absPath)) {
+                    const stat = fs.statSync(absPath);
+                    if (stat.isDirectory()) {
+                        files = files.concat(findJsFiles(absPath));
+                    } else {
+                        files.push(absPath);
+                    }
+                }
+            });
+            return files;
         }
 
         // Try .clasp.json
@@ -85,7 +98,7 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
             // --- 1. GAS Context Initialization ---
             try {
                 const cwd = process.cwd();
-                const absDbPath = path.resolve(cwd, dbPath);
+                const absDbPath = path.resolve(cwd, defaultSpreadsheet);
                 scriptFiles = resolveScriptFiles(cwd);
 
                 console.log('[GasPlugin] DB Path:', absDbPath);
@@ -95,17 +108,23 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
                     console.warn('[GasPlugin] No script files found. Backend logic will not work.');
                 }
 
-                const driver = new SqliteDriver(absDbPath);
-                const client = new GasSheetClient(driver);
+                const driverFactory = (dbFilePath: string) => new SqliteDriver(dbFilePath);
+                const clientFactory = (dbFilePath: string) => new GasSheetClient(driverFactory(dbFilePath));
+                const propertiesService = new MockPropertiesService(mockProperties); // Instantiate once to persist state
 
                 const sandbox = {
                     SpreadsheetApp: {
-                        getActiveSpreadsheet: () => client,
-                        openById: () => client,
+                        getActiveSpreadsheet: () => clientFactory(absDbPath),
+                        openById: (id: string) => {
+                            const dbDir = path.dirname(absDbPath);
+
+                            const ext = path.extname(absDbPath) || '.db';
+                            return clientFactory(path.resolve(dbDir, `${id}${ext}`));
+                        },
                         WrapStrategy: GasSheetClient.WrapStrategy,
                     },
                     PropertiesService: {
-                        getScriptProperties: () => new MockPropertiesService({ SSID: mockSsid }).getScriptProperties()
+                        getScriptProperties: () => propertiesService.getScriptProperties()
                     },
                     Session: new MockSession('dev-user@example.com'),
                     Utilities: new MockUtilities(),
@@ -121,26 +140,6 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
                     vm.runInContext(code, gasContext);
                 });
                 console.log('[GasPlugin] GAS Context initialized.');
-
-                // --- Default Initialization Logic ---
-                // 1. Create Next Month (if function exists)
-                if (typeof gasContext.createNextMonthSheet === 'function') {
-                    gasContext.createNextMonthSheet();
-                }
-                // 2. Create Current Month (Generic Helper)
-                const today = new Date();
-                const yyyy = today.getFullYear();
-                const mm = ("0" + (today.getMonth() + 1)).slice(-2);
-                // Attempt to guess sheet name format yyyy_mm (used in this project)
-                const sheetName = `${yyyy}_${mm}`;
-                const ss = sandbox.SpreadsheetApp.openById(mockSsid);
-                if (!ss.getSheetByName(sheetName)) {
-                    // console.log(`[GasPlugin] Auto-creating current month sheet: ${sheetName}`);
-                    const sheet = ss.insertSheet(sheetName);
-                    // Initialize 70 seats (Generic enough?)
-                    const seats = Array.from({ length: 70 }, (_, i) => [i + 1]);
-                    sheet.getRange(2, 1, 70, 1).setValues(seats);
-                }
 
                 // User Custom Callback
                 if (onContextReady) {

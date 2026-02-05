@@ -1,94 +1,121 @@
-# gas-sheet-driver
+# @biva8710/gas-sheet-driver
 
-`gas-sheet-driver` は、Google Apps Script (GAS) のスプレッドシート操作を抽象化し、ローカル環境でのテストや開発を容易にするための TypeScript ライブラリです。
+`@biva8710/gas-sheet-driver` は、Google Apps Script (GAS) の開発体験をモダンにするためのツールキットです。
+Vite と連携して、スプレッドシート操作を含むサーバーサイドロジックをローカル環境（Node.js + SQLite）で完全に動作・テストすることを可能にします。
 
 ## 特徴
 
-- **GAS 互換インターフェース**: `getRange`, `getValues`, `setValues`, `appendRow` など、GAS の `SpreadsheetApp` に近い感覚で操作できます。
-- **SQLite によるフェイク実装**: ローカル環境では SQLite (`better-sqlite3`) をバックエンドとして使用し、データの永続化を伴うテストが可能です。
-- **TypeScript サポート**: 型定義が完備されており、安全な開発をサポートします。
+- ⚡ **Zero Config Vite Plugin**: プラグインを追加するだけで、ローカルサーバー上にGASの実行環境（`google.script.run` エミュレーション）を自動構築します。
+- 🔋 **SpreadsheetApp on SQLite**: スプレッドシートの読み書き操作を、ローカルの SQLite データベースに対して行います。本番のAPIクオータを気にする必要はありません。
+- 🔄 **Universal Code**: サーバーサイドのコード（`.js` / `.ts`）は、特有の書き換えなしで GAS 環境とローカル環境の両方で動作します。
 
 ## インストール
 
+このパッケージは**開発環境専用**です。
+
 ```bash
-npm install gas-sheet-driver
+npm install -D @biva8710/gas-sheet-driver
 ```
 
-※ ローカルで `SqliteDriver` を使用する場合、`better-sqlite3` のネイティブ依存関係のビルドが必要になることがあります。
+## 使い方
 
-## 基本的な使い方
+### 1. Vite 設定 (vite.config.ts)
 
-### ローカル開発・テストでの利用 (Polyfill アプローチ)
-
-本番の GAS コードを一切変更せずに、ローカル環境（Node.js）で実行するためのセットアップ例です。
+Vite プラグインを導入することで、ローカルサーバー起動時にバックエンドのGASロジックも同時に立ち上がります。
 
 ```typescript
-import { GasSheetClient, SqliteDriver } from 'gas-sheet-driver';
+import { defineConfig } from 'vite';
+import { gasPlugin } from '@biva8710/gas-sheet-driver/vite';
 
-/**
- * 1. 開発環境（Node.js）の場合のみ、グローバルオブジェクトをモックする
- */
-if (typeof SpreadsheetApp === 'undefined') {
-  const driver = new SqliteDriver('local-debug.db');
-  const client = new GasSheetClient(driver);
+export default defineConfig({
+  plugins: [
+    gasPlugin({
+      // GASコードが含まれるディレクトリ（またはファイルパス配列）
+      // default: .clasp.json の rootDir を使用
+      // include: ['./src'],
 
-  // SpreadsheetApp という名前でグローバルに登録（なりすまし）
-  (global as any).SpreadsheetApp = {
-    getActiveSpreadsheet: () => client,
-    openById: () => client,
-    WrapStrategy: GasSheetClient.WrapStrategy
-  };
-  
-  // その他のサービスのモックも利用可能
-  const { MockPropertiesService, MockUtilities, MockSession } = require('gas-sheet-driver');
+      // ローカルDBの保存先
+      // default: local-dev.db
+      // defaultSpreadsheet: 'local-dev.db',
+      
+      // PropertiesService.getScriptProperties() に注入される初期値
+      // default: {}
+      // mockProperties: { SSID: 'DEV_SHEET_ID' }
+    })
+  ]
+});
+```
 
-  (global as any).PropertiesService = new MockPropertiesService({ SSID: 'DUMMY_ID' });
-  (global as any).Utilities = new MockUtilities();
-  (global as any).Session = new MockSession('dev-user@example.com');
-}
+### 2. クライアントサイド実装 (GasBridge)
 
-/**
- * 2. クライアントサイドでの利用 (GasBridge)
- * google.script.run の代わりに GasBridge.run を使用することで、
- * ローカル環境ではグローバル関数を直接呼び出し、GAS環境ではサーバーサイド関数を呼び出します。
- */
-import { GasBridge } from 'gas-sheet-driver';
+`google.script.run` の代わりに `GasBridge` を使用します。
+これにより、ローカルではHTTP経由でモックサーバーを呼び出し、本番GASではそのま `google.script.run` に解釈されます。
 
-function fetchSeatStatuses(dateString) {
-  GasBridge.run.getDayStatus(dateString)
-    .then(updateAllSeats)
-    .catch(onFailure);
-}
+```typescript
+import { GasBridge } from '@biva8710/gas-sheet-driver';
 
-/**
- * 3. 本番の GAS コード（サーバーサイド）
- */
-function getDayStatus(dateStr) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // ...
+// Promiseベースで呼び出し可能
+async function loadData() {
+  try {
+    // サーバー側の関数 getDayStatus(date) を呼び出す
+    const data = await GasBridge.run.getDayStatus('2024-01-01'); 
+    console.log(data);
+  } catch (error) {
+    console.error(error);
+  }
 }
 ```
 
-### このアプローチのメリット
-- **本番コードへの依存ゼロ**: GAS 環境ではこのライブラリは存在しないため、一切の影響を与えません。
-- **シームレスな移行**: `createNextMonthSheet` のような複雑なロジックを、そのままローカルの `vitest` などでテストできます。
-- **Promise サポート**: `GasBridge` を使うことで、GAS の非同期呼び出しを `async/await` や `.then().catch()` でモダンに記述できます。
+### 3. サーバーサイド実装 (GAS)
 
+通常の GAS と同じように記述します。ローカル実行時は自動的に SQLite ドライバが注入されます。
 
-## アーキテクチャ
+```javascript
+function getDayStatus(dateStr) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('2024_01');
+  // ...
+  return result;
+}
+```
 
-このライブラリは「ドライバーパターン」を採用しています。
+## サポート機能 (エミュレーション)
 
-- `ISheetDriver`: ストレージへのアクセスを抽象化するインターフェース。
-- `SqliteDriver`: ローカルテスト用の SQLite 実装。
-- `GasSheetClient`: ユーザーが直接操作する高レイヤーのクラス群 (`Sheet`, `Range` を含む)。
+現在は以下の機能のサブセットをサポートしています。
 
-## 今後の展望
+- **SpreadsheetApp**:
+  - `openById`, `getActiveSpreadsheet`
+  - `getSheetByName`, `insertSheet`, `deleteSheet`
+  - `getRange`, `getDataRange`
+  - `getValues`, `setValues`, `clear`
+- **PropertiesService**: `getScriptProperties` (Mock)
+- **Utilities**: `formatDate` (Mock)
+- **Session**: `getActiveUser` (Mock)
 
-- `GasDriver`: 実際の GAS 環境（`SpreadsheetApp`）をラップするドライバーの実装。
-- A1 記法のより広範なサポート。
-- セルの書式設定（背景色など）の限定的なサポート。
+## TIPS: モックのカスタマイズ
+
+デフォルトのモックでは不足している場合や、特定の挙動をテストしたい場合は `onContextReady` フックを使って GAS グローバルオブジェクトを直接拡張・上書きできます。
+
+```typescript
+gasPlugin({
+  onContextReady: (gasContext) => {
+    // 例: Session.getActiveUser() の挙動を上書き
+    gasContext.Session = {
+      getActiveUser: () => ({ 
+        getEmail: () => 'admin@example.com' 
+      })
+    };
+    
+    // 例: まだサポートされていないクラスを独自に追加
+    gasContext.MailApp = {
+      sendEmail: (to, subject, body) => {
+        console.log(`[MockMail] To: ${to}, Subject: ${subject}`);
+      }
+    };
+  }
+})
+```
 
 ## ライセンス
 
-ISC
+MIT
