@@ -20,30 +20,57 @@ npm install gas-sheet-driver
 
 ### ローカル開発・テストでの利用 (Polyfill アプローチ)
 
-本番の GAS コードを一切変更せずに、ローカル環境で実行するためのセットアップ例です。
+本番の GAS コードを一切変更せずに、ローカル環境（Node.js）で実行するためのセットアップ例です。
 
 ```typescript
 import { GasSheetClient, SqliteDriver } from 'gas-sheet-driver';
 
-// 1. SQLite ドライバーの初期化
-const driver = new SqliteDriver('local.db');
-const client = new GasSheetClient(driver);
+/**
+ * 1. 開発環境（Node.js）の場合のみ、グローバルオブジェクトをモックする
+ */
+if (typeof SpreadsheetApp === 'undefined') {
+  const driver = new SqliteDriver('local-debug.db');
+  const client = new GasSheetClient(driver);
 
-// 2. グローバルオブジェクトのモック (Polyfill)
-// これにより、SpreadsheetApp.getActiveSpreadsheet() 等がローカルで動作します
-global.SpreadsheetApp = {
-  getActiveSpreadsheet: () => client,
-  openById: () => client,
-  WrapStrategy: GasSheetClient.WrapStrategy
-} as any;
+  // SpreadsheetApp という名前でグローバルに登録（なりすまし）
+  (global as any).SpreadsheetApp = {
+    getActiveSpreadsheet: () => client,
+    openById: () => client,
+    WrapStrategy: GasSheetClient.WrapStrategy
+  };
+  
+  // 必要に応じて他のサービスもモック
+  (global as any).PropertiesService = {
+    getScriptProperties: () => ({ getProperty: (key: string) => 'DUMMY_ID' })
+  };
+}
 
-// 3. 本番の GAS スクリプトを呼び出す
-// createNextMonthSheet(); 
+/**
+ * 2. クライアントサイドでの利用 (GasBridge)
+ * google.script.run の代わりに GasBridge.run を使用することで、
+ * ローカル環境ではグローバル関数を直接呼び出し、GAS環境ではサーバーサイド関数を呼び出します。
+ */
+import { GasBridge } from 'gas-sheet-driver';
+
+function fetchSeatStatuses(dateString) {
+  GasBridge.run.getDayStatus(dateString)
+    .then(updateAllSeats)
+    .catch(onFailure);
+}
+
+/**
+ * 3. 本番の GAS コード（サーバーサイド）
+ */
+function getDayStatus(dateStr) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // ...
+}
 ```
 
-### メリット
-- **本番コードへの依存ゼロ**: 本番環境ではこのライブラリをロードする必要はありません。
-- **メンテナンス性**: Google の API 更新時も、本番コードには一切影響しません。ローカルで新機能のスタブが必要になった場合のみ、このライブラリを拡張します。
+### このアプローチのメリット
+- **本番コードへの依存ゼロ**: GAS 環境ではこのライブラリは存在しないため、一切の影響を与えません。
+- **シームレスな移行**: `createNextMonthSheet` のような複雑なロジックを、そのままローカルの `vitest` などでテストできます。
+- **Promise サポート**: `GasBridge` を使うことで、GAS の非同期呼び出しを `async/await` や `.then().catch()` でモダンに記述できます。
 
 
 ## アーキテクチャ
