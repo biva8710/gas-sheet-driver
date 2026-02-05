@@ -84,7 +84,7 @@ export class SqliteDriver implements ISheetDriver {
     return result?.lastCol ?? 0;
   }
 
-  addSheet(sheetName: string): void {
+  addSheet(sheetName: string, _index?: number): void {
     const stmt = this.db.prepare('INSERT OR IGNORE INTO sheets (name) VALUES (?)');
     stmt.run(sheetName);
   }
@@ -105,12 +105,22 @@ export class SqliteDriver implements ISheetDriver {
     return rows.map((r) => r.name);
   }
 
+  getNumSheets(): number {
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM sheets');
+    const result = stmt.get() as { count: number };
+    return result.count;
+  }
+
   clear(sheetName: string, startRow: number, startCol: number, numRows: number, numCols: number): void {
     const stmt = this.db.prepare(`
       DELETE FROM cells
       WHERE sheet_name = ? AND row >= ? AND row < ? AND col >= ? AND col < ?
     `);
     stmt.run(sheetName, startRow, startRow + numRows, startCol, startCol + numCols);
+  }
+
+  setFormat(_sheetName: string, _startRow: number, _startCol: number, _numRows: number, _numCols: number, _key: string, _value: any): void {
+    // Formatting is No-op in SqliteDriver
   }
 
   private ensureSheetExists(sheetName: string): void {

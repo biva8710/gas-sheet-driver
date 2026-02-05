@@ -48,8 +48,9 @@ export interface ISheetDriver {
   /**
    * Creates a new sheet with the given name.
    * @param sheetName The name of the sheet to create.
+   * @param index Optional index to insert the sheet.
    */
-  addSheet(sheetName: string): void;
+  addSheet(sheetName: string, index?: number): void;
 
   /**
    * Deletes a sheet with the given name.
@@ -63,7 +64,17 @@ export interface ISheetDriver {
   getSheetNames(): string[];
 
   /**
+   * Gets the number of sheets in the spreadsheet.
+   */
+  getNumSheets(): number;
+
+  /**
    * Clears a specific range.
    */
   clear(sheetName: string, startRow: number, startCol: number, numRows: number, numCols: number): void;
+
+  /**
+   * Sets format for a range (stub).
+   */
+  setFormat(sheetName: string, startRow: number, startCol: number, numRows: number, numCols: number, key: string, value: any): void;
 }

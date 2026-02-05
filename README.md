@@ -18,39 +18,33 @@ npm install gas-sheet-driver
 
 ## 基本的な使い方
 
-### 環境に応じたドライバーの切り替え
+### ローカル開発・テストでの利用 (Polyfill アプローチ)
 
-`gas-sheet-driver` の真価は、本番（GAS）とローカル（Node.js/SQLite）でコードを共通化できる点にあります。
+本番の GAS コードを一切変更せずに、ローカル環境で実行するためのセットアップ例です。
 
 ```typescript
-import { GasSheetClient, SqliteDriver, GasDriver } from 'gas-sheet-driver';
+import { GasSheetClient, SqliteDriver } from 'gas-sheet-driver';
 
-let driver;
-
-// 環境判定（GAS環境かどうかのチェック）
-if (typeof SpreadsheetApp !== 'undefined') {
-  // 本番環境 (Google Apps Script)
-  driver = new GasDriver(SpreadsheetApp.getActiveSpreadsheet());
-} else {
-  // ローカル環境 (Node.js / Unit Test)
-  driver = new SqliteDriver('local-debug.db');
-}
-
+// 1. SQLite ドライバーの初期化
+const driver = new SqliteDriver('local.db');
 const client = new GasSheetClient(driver);
 
-// 以降のコードは、どちらの環境でも全く同じように動作します
-const sheet = client.getSheetByName('Data') || client.insertSheet('Data');
-sheet.appendRow([new Date().toISOString(), 'Log Entry']);
+// 2. グローバルオブジェクトのモック (Polyfill)
+// これにより、SpreadsheetApp.getActiveSpreadsheet() 等がローカルで動作します
+global.SpreadsheetApp = {
+  getActiveSpreadsheet: () => client,
+  openById: () => client,
+  WrapStrategy: GasSheetClient.WrapStrategy
+} as any;
+
+// 3. 本番の GAS スクリプトを呼び出す
+// createNextMonthSheet(); 
 ```
 
-### クライアントサイドからの利用が想定される場合
+### メリット
+- **本番コードへの依存ゼロ**: 本番環境ではこのライブラリをロードする必要はありません。
+- **メンテナンス性**: Google の API 更新時も、本番コードには一切影響しません。ローカルで新機能のスタブが必要になった場合のみ、このライブラリを拡張します。
 
-もし Web アプリケーションなどで `google.script.run` を介した判定が必要な場合は、以下のようなパターンも有効です。
-
-```typescript
-const isGas = typeof google !== 'undefined' && google.script;
-// ... 各環境に応じた初期化
-```
 
 ## アーキテクチャ
 
