@@ -48,22 +48,42 @@ export default defineConfig({
 
 ### 2. クライアントサイド実装 (GasBridge)
 
-`google.script.run` の代わりに `GasBridge` を使用します。
-これにより、ローカルではHTTP経由でモックサーバーを呼び出し、本番GASではそのま `google.script.run` に解釈されます。
+`google.script.run` の代わりに `GasBridge.run` を使用します。
+Promise ベースで呼び出し可能で、かつ GAS 本来のグローバル関数呼び出しに近い記法をサポートしています。
 
 ```typescript
 import { GasBridge } from '@biva8710/gas-sheet-driver';
 
-// Promiseベースで呼び出し可能
 async function loadData() {
   try {
-    // サーバー側の関数 getDayStatus(date) を呼び出す
-    const data = await GasBridge.run.getDayStatus('2024-01-01'); 
+    // サーバー側の関数 getDayStatus(date) をシームレスに呼び出す
+    const data = await GasBridge.run.getDayStatus('2026/02/05'); 
     console.log(data);
   } catch (error) {
     console.error(error);
   }
 }
+```
+
+### 3. 環境変数とモック設定 (.env 対応)
+
+プロジェクトルートに `.env` ファイルを配置すると、プラグインが自動的に読み込んで `PropertiesService.getScriptProperties()` に注入します。
+
+```env
+# .env の例
+SSID=your_spreadsheet_id_for_dev
+ADMIN_EMAILS=admin@example.com,test@example.com
+```
+
+Vite 設定での `mockProperties` と併用した場合、`mockProperties` の値が優先（上書き）されます。
+
+```typescript
+gasPlugin({
+  // 明示的なモック設定 (.env より優先)
+  mockProperties: {
+    DEBUG: 'true'
+  }
+})
 ```
 
 ### 3. サーバーサイド実装 (GAS)

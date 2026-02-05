@@ -26,6 +26,26 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
         onContextReady
     } = options;
 
+    // Load .env if exists
+    const envPath = path.resolve(process.cwd(), '.env');
+    let loadedEnv: Record<string, string> = {};
+    if (fs.existsSync(envPath)) {
+        try {
+            const envContent = fs.readFileSync(envPath, 'utf8');
+            envContent.split('\n').forEach(line => {
+                const [key, ...vals] = line.split('=');
+                if (key && vals.length > 0) {
+                    loadedEnv[key.trim()] = vals.join('=').trim().replace(/^['"]|['"]$/g, '');
+                }
+            });
+            console.log('[GasPlugin] Loaded .env properties');
+        } catch (e) {
+            console.warn('[GasPlugin] Failed to read .env:', e);
+        }
+    }
+
+    const finalProperties = { ...loadedEnv, ...mockProperties };
+
     let gasContext: any = null;
     let scriptFiles: string[] = [];
 
@@ -110,7 +130,7 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
 
                 const driverFactory = (dbFilePath: string) => new SqliteDriver(dbFilePath);
                 const clientFactory = (dbFilePath: string) => new GasSheetClient(driverFactory(dbFilePath));
-                const propertiesService = new MockPropertiesService(mockProperties); // Instantiate once to persist state
+                const propertiesService = new MockPropertiesService(finalProperties); // Instantiate once to persist state
 
                 const sandbox = {
                     SpreadsheetApp: {
