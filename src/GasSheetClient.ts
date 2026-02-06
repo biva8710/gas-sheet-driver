@@ -9,7 +9,7 @@ export class Range {
     private startCol: number,
     private numRows: number,
     private numCols: number
-  ) {}
+  ) { }
 
   getValues(): any[][] {
     return this.driver.getValues(
@@ -78,7 +78,7 @@ export class Range {
 }
 
 export class Sheet {
-  constructor(private driver: ISheetDriver, private name: string) {}
+  constructor(private driver: ISheetDriver, private name: string) { }
 
   getName(): string {
     return this.name;
@@ -144,6 +144,14 @@ export class Sheet {
   autoResizeColumns(_start: number, _num: number): void {
     // No-op
   }
+
+  hideSheet(): void {
+    // No-op for mock
+  }
+
+  setColumnWidth(_col: number, _width: number): void {
+    // No-op
+  }
 }
 
 export class GasSheetClient {
@@ -153,7 +161,7 @@ export class GasSheetClient {
     OVERFLOW: 'OVERFLOW',
   };
 
-  constructor(private driver: ISheetDriver) {}
+  constructor(private driver: ISheetDriver) { }
 
   getSheetByName(name: string): Sheet | null {
     const names = this.driver.getSheetNames();
