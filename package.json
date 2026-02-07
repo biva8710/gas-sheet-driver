@@ -1,6 +1,6 @@
 {
   "name": "@biva8710/gas-sheet-driver",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Google Apps Script bridge driver for local development, enabling seamless execution with Vite and SQLite persistence.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -38,6 +38,14 @@
     "spreadsheet",
     "google-sheets"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/biva8710/gas-sheet-driver.git"
+  },
+  "bugs": {
+    "url": "https://github.com/biva8710/gas-sheet-driver/issues"
+  },
+  "homepage": "https://github.com/biva8710/gas-sheet-driver#readme",
   "author": "biva8710",
   "license": "MIT",
   "type": "commonjs",
