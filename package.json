@@ -1,6 +1,6 @@
 {
   "name": "@biva8710/gas-sheet-driver",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Google Apps Script bridge driver for local development, enabling seamless execution with Vite and SQLite persistence.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

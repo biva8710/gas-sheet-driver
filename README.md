@@ -1,27 +1,29 @@
 # @biva8710/gas-sheet-driver
 
-`@biva8710/gas-sheet-driver` は、Google Apps Script (GAS) の開発体験をモダンにするためのツールキットです。
-Vite と連携して、スプレッドシート操作を含むサーバーサイドロジックをローカル環境（Node.js + SQLite）で完全に動作・テストすることを可能にします。
+`@biva8710/gas-sheet-driver` is a toolkit designed to modernize the Google Apps Script (GAS) development experience.
+By integrating with Vite, it allows you to fully run and test server-side logic, including Spreadsheet operations, in a local environment (Node.js + SQLite).
 
-## 特徴
+[🇯🇵 日本語ドキュメント (Japanese Docs)](./README.ja.md)
 
-- ⚡ **Zero Config Vite Plugin**: プラグインを追加するだけで、ローカルサーバー上にGASの実行環境（`google.script.run` エミュレーション）を自動構築します。
-- 🔋 **SpreadsheetApp on SQLite**: スプレッドシートの読み書き操作を、ローカルの SQLite データベースに対して行います。本番のAPIクオータを気にする必要はありません。
-- 🔄 **Universal Code**: サーバーサイドのコード（`.js` / `.ts`）は、特有の書き換えなしで GAS 環境とローカル環境の両方で動作します。
+## Features
 
-## インストール
+- ⚡ **Zero Config Vite Plugin**: Automatically sets up a GAS execution environment (`google.script.run` emulation) on your local server just by adding the plugin.
+- 🔋 **SpreadsheetApp on SQLite**: Performs spreadsheet read/write operations against a local SQLite database. No need to worry about production API quotas during development.
+- 🔄 **Universal Code**: Server-side code (`.js` / `.ts`) runs on both GAS and local environments without any specific rewriting.
 
-このパッケージは**開発環境専用**です。
+## Installation
+
+This package is intended for **development environments only**.
 
 ```bash
 npm install -D @biva8710/gas-sheet-driver
 ```
 
-## 使い方
+## Usage
 
-### 1. Vite 設定 (vite.config.ts)
+### 1. Vite Configuration (vite.config.ts)
 
-Vite プラグインを導入することで、ローカルサーバー起動時にバックエンドのGASロジックも同時に立ち上がります。
+Importing the Vite plugin will automatically launch the backend GAS logic alongside your local server.
 
 ```typescript
 import { defineConfig } from 'vite';
@@ -30,15 +32,15 @@ import { gasPlugin } from '@biva8710/gas-sheet-driver/vite';
 export default defineConfig({
   plugins: [
     gasPlugin({
-      // GASコードが含まれるディレクトリ（またはファイルパス配列）
-      // default: .clasp.json の rootDir を使用
+      // Directory containing GAS code (or array of file paths)
+      // default: uses rootDir from .clasp.json
       // include: ['./src'],
 
-      // ローカルDBの保存先
+      // Local DB file path
       // default: local-dev.db
       // defaultSpreadsheet: 'local-dev.db',
       
-      // PropertiesService.getScriptProperties() に注入される初期値
+      // Initial values injected into PropertiesService.getScriptProperties()
       // default: {}
       // mockProperties: { SSID: 'DEV_SHEET_ID' }
     })
@@ -46,17 +48,17 @@ export default defineConfig({
 });
 ```
 
-### 2. クライアントサイド実装 (GasBridge)
+### 2. Client-Side Implementation (GasBridge)
 
-`google.script.run` の代わりに `GasBridge.run` を使用します。
-Promise ベースで呼び出し可能で、かつ GAS 本来のグローバル関数呼び出しに近い記法をサポートしています。
+Use `GasBridge.run` instead of `google.script.run`.
+It supports Promise-based calls and syntax similar to native GAS global function calls.
 
 ```typescript
 import { GasBridge } from '@biva8710/gas-sheet-driver';
 
 async function loadData() {
   try {
-    // サーバー側の関数 getDayStatus(date) をシームレスに呼び出す
+    // Seamlessly call server-side function getDayStatus(date)
     const data = await GasBridge.run.getDayStatus('2026/02/05'); 
     console.log(data);
   } catch (error) {
@@ -65,30 +67,30 @@ async function loadData() {
 }
 ```
 
-### 3. 環境変数とモック設定 (.env 対応)
+### 3. Environment Variables & Mock Settings (.env support)
 
-プロジェクトルートに `.env` ファイルを配置すると、プラグインが自動的に読み込んで `PropertiesService.getScriptProperties()` に注入します。
+If you place a `.env` file in your project root, the plugin will automatically load it and inject it into `PropertiesService.getScriptProperties()`.
 
 ```env
-# .env の例
+# .env example
 SSID=your_spreadsheet_id_for_dev
 ADMIN_EMAILS=admin@example.com,test@example.com
 ```
 
-Vite 設定での `mockProperties` と併用した場合、`mockProperties` の値が優先（上書き）されます。
+If used with `mockProperties` in the Vite config, `mockProperties` values take precedence (overwrite).
 
 ```typescript
 gasPlugin({
-  // 明示的なモック設定 (.env より優先)
+  // Explicit mock settings (prioritized over .env)
   mockProperties: {
     DEBUG: 'true'
   }
 })
 ```
 
-### 3. サーバーサイド実装 (GAS)
+### 4. Server-Side Implementation (GAS)
 
-通常の GAS と同じように記述します。ローカル実行時は自動的に SQLite ドライバが注入されます。
+Write code just like normal GAS. The SQLite driver is automatically injected during local execution.
 
 ```javascript
 function getDayStatus(dateStr) {
@@ -99,9 +101,9 @@ function getDayStatus(dateStr) {
 }
 ```
 
-## サポート機能 (エミュレーション)
+## Supported Features (Emulation)
 
-現在は以下の機能のサブセットをサポートしています。
+Currently, a subset of the following features is supported:
 
 - **SpreadsheetApp**:
   - `openById`, `getActiveSpreadsheet`
@@ -110,23 +112,24 @@ function getDayStatus(dateStr) {
   - `getValues`, `setValues`, `clear`
 - **PropertiesService**: `getScriptProperties` (Mock)
 - **Utilities**: `formatDate` (Mock)
-- **Session**: `getActiveUser` (Mock)
+- **Session**: `getActiveUser`, `getScriptTimeZone` (Mock)
+- **Logger**: `log` (aliased to `console.log`)
 
-## TIPS: モックのカスタマイズ
+## TIPS: Customizing Mocks
 
-デフォルトのモックでは不足している場合や、特定の挙動をテストしたい場合は `onContextReady` フックを使って GAS グローバルオブジェクトを直接拡張・上書きできます。
+If the default mocks are insufficient, or if you want to test specific behaviors, you can use the `onContextReady` hook to directly extend or overwrite GAS global objects.
 
 ```typescript
 gasPlugin({
   onContextReady: (gasContext) => {
-    // 例: Session.getActiveUser() の挙動を上書き
+    // Example: Overwrite Session.getActiveUser() behavior
     gasContext.Session = {
       getActiveUser: () => ({ 
         getEmail: () => 'admin@example.com' 
       })
     };
     
-    // 例: まだサポートされていないクラスを独自に追加
+    // Example: Add a custom class not yet supported
     gasContext.MailApp = {
       sendEmail: (to, subject, body) => {
         console.log(`[MockMail] To: ${to}, Subject: ${subject}`);
@@ -136,6 +139,6 @@ gasPlugin({
 })
 ```
 
-## ライセンス
+## License
 
 MIT
