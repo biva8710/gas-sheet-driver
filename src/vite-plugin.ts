@@ -16,6 +16,8 @@ interface GasPluginOptions {
     defaultSpreadsheet?: string;
     /** Initial properties for MockPropertiesService */
     mockProperties?: Record<string, string>;
+    /** Mock user email for Session.getActiveUser().getEmail() */
+    mockEmail?: string;
     /** Callback fired when GAS context is initialized */
     onContextReady?: (context: any) => void;
 }
@@ -24,6 +26,7 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
     const {
         defaultSpreadsheet = 'local-dev.db',
         mockProperties = {},
+        mockEmail,
         onContextReady
     } = options;
 
@@ -45,7 +48,12 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
         }
     }
 
-    const finalProperties = { ...loadedEnv, ...mockProperties };
+    const finalProperties = { 
+        ...loadedEnv, 
+        ADMIN_EMAILS: loadedEnv.VITE_ADMIN_EMAILS || "", // VITE_ADMIN_EMAILS を ADMIN_EMAILS としてプロパティに引き継ぐ
+        ...mockProperties 
+    };
+    const finalMockEmail = mockEmail || loadedEnv.VITE_USER_EMAIL || loadedEnv.VITE_ADMIN_EMAILS || 'dev-user@example.com';
 
     let gasContext: any = null;
     let scriptFiles: string[] = [];
@@ -147,7 +155,7 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
                     PropertiesService: {
                         getScriptProperties: () => propertiesService.getScriptProperties()
                     },
-                    Session: new MockSession('dev-user@example.com'),
+                    Session: new MockSession(finalMockEmail),
                     Utilities: new MockUtilities(),
                     Logger: { log: console.log },
                     console: console,
@@ -155,49 +163,44 @@ export function gasPlugin(options: GasPluginOptions = {}): Plugin {
 
                 gasContext = vm.createContext(sandbox);
 
-                // --- 2. Bundle and Load Scripts ---
-                // We bundle the scripts to handle imports/exports and TypeScript
-                // If there's an index.ts or index.js, we treat it as the entry.
-                const entryFile = scriptFiles.find(f => f.endsWith('index.ts') || f.endsWith('index.js')) || scriptFiles[0];
-
-                if (entryFile) {
+                // --- 2. Load and Transpile Scripts ---
+                for (const file of scriptFiles) {
                     try {
-                        const result = esbuild.buildSync({
-                            entryPoints: [entryFile],
-                            bundle: true,
-                            write: false,
-                            format: 'cjs',
-                            platform: 'neutral',
+                        const code = fs.readFileSync(file, 'utf8');
+                        const isTs = file.endsWith('.ts');
+
+                        // We use esbuild to handle TypeScript and modern JS
+                        // For classic GAS feel, we want each file to be able to define globals.
+                        // transformSync by default doesn't wrap in a function scope,
+                        // so top-level function declarations become global in the VM context.
+                        const result = esbuild.transformSync(code, {
+                            loader: isTs ? 'ts' : 'js',
                             target: 'esnext',
-                            // Allow common GAS globals to be external if they were somehow imported,
-                            // but usually they just exist in the sandbox.
                         });
 
-                        const bundledCode = result.outputFiles[0].text;
+                        const compiledCode = result.code;
                         const exportsObj: any = {};
                         const moduleObj = { exports: exportsObj };
 
-                        // In the sandbox, make exports and module available
+                        // Make exports and module available for this specific file run
                         gasContext.exports = exportsObj;
                         gasContext.module = moduleObj;
 
-                        vm.runInContext(bundledCode, gasContext);
+                        vm.runInContext(compiledCode, gasContext);
 
-                        // Copy exported functions back to global context so they are callable as gasContext[functionName]
+                        // Also support explicit exports (for modern TS styles)
                         const finalExports = gasContext.module.exports;
                         Object.keys(finalExports).forEach(key => {
                             gasContext[key] = finalExports[key];
                         });
-
-                        console.log('[GasPlugin] GAS Context initialized with bundled code.');
                     } catch (err) {
-                        console.error('[GasPlugin] Bundling failed:', err);
-                        // Fallback: Just load as is (might fail if it has imports)
-                        scriptFiles.forEach(file => {
-                            const code = fs.readFileSync(file, 'utf8');
-                            vm.runInContext(code, gasContext);
-                        });
+                        console.error(`[GasPlugin] Failed to load ${file}:`, err);
                     }
+                }
+                const registeredFunctions = Object.keys(gasContext).filter(key => typeof gasContext[key] === 'function');
+                console.log(`[GasPlugin] GAS Context initialized. Registered Functions: ${registeredFunctions.length}`);
+                if (registeredFunctions.length === 0) {
+                    console.warn('[GasPlugin] Warning: No functions were registered in the GAS context. Check your scripts.');
                 }
 
                 // User Custom Callback
